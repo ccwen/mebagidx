@@ -1,0 +1,33 @@
+{
+  "name": "mebagidx",
+  "repo": "https://github.com/yapcheahshen/mebagidx.git",
+  "description": "hello world",
+  "version": "0.0.1",
+  "keywords": [],
+  "dependencies": {
+    "ksanaforge/boot": "*",
+    "brighthas/bootstrap": "*",
+    "ksana/document": "*",
+    "ksanaforge/fileinstaller": "*",
+    "ksanaforge/checkbrowser": "*",
+    "ksanaforge/swipe": "*",
+    "ksanaforge/htmlfs": "*",
+    "mebagidx/main": "*"
+  },
+  "development": {},
+  "paths": [
+    "components",
+    "../components",
+    "../../components",
+    "../node_modules/",
+    "../../node_modules/"
+  ],
+  "license": "MIT",
+  "main": "index.js",
+  "scripts": [
+    "index.js"
+  ],
+  "styles": [
+    "index.css"
+  ]
+}

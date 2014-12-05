@@ -136,7 +136,7 @@ var Main = React.createClass({
   	if (this.refs.tofind) this.refs.tofind.getDOMNode().focus();
   },
   dosearch:function(wh) {
-  	if (this.processing) return;
+  	if (this.processing||!this.state.db) return;
   	this.processing=true;
   	var names=this.state.db.get(["extra","names"]);
   	var res=[];

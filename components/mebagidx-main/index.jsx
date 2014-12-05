@@ -133,7 +133,7 @@ var Main = React.createClass({
       );
   },
   componentDidUpdate:function() {
-  	this.refs.tofind.getDOMNode().focus();
+  	if (this.refs.tofind) this.refs.tofind.getDOMNode().focus();
   },
   dosearch:function(wh) {
   	if (this.processing) return;
@@ -166,7 +166,7 @@ var Main = React.createClass({
   	}
   },
   renderInputs:function() {
-  	return <div>字:<input onInput={this.tofindChanged} ref="tofind"></input>
+  	return <div>字:<input onInput={this.tofindChanged} className="tofind" ref="tofind"></input>
   	</div>
   },
   renderResultItem:function(r) {
@@ -182,7 +182,7 @@ var Main = React.createClass({
   renderResults:function() {
   	if (!this.state.db)return;
   	
-  	return <table className="table striped"><thead><tr><td>字</td><td>出處</td>
+  	return <table className="table striped results"><thead><tr><td>字</td><td>出處</td>
   	<td>頁碼</td><td>檢字表頁碼</td></tr>
   	</thead>
   		<tbody>{this.state.results.map(this.renderResultItem)}</tbody>

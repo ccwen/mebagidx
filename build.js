@@ -15543,7 +15543,7 @@ var Main = React.createClass({displayName: 'Main',
       );
   },
   componentDidUpdate:function() {
-  	this.refs.tofind.getDOMNode().focus();
+  	if (this.refs.tofind) this.refs.tofind.getDOMNode().focus();
   },
   dosearch:function(wh) {
   	if (this.processing) return;
@@ -15576,7 +15576,7 @@ var Main = React.createClass({displayName: 'Main',
   	}
   },
   renderInputs:function() {
-  	return React.createElement("div", null, "字:", React.createElement("input", {onInput: this.tofindChanged, ref: "tofind"})
+  	return React.createElement("div", null, "字:", React.createElement("input", {onInput: this.tofindChanged, className: "tofind", ref: "tofind"})
   	)
   },
   renderResultItem:function(r) {
@@ -15592,7 +15592,7 @@ var Main = React.createClass({displayName: 'Main',
   renderResults:function() {
   	if (!this.state.db)return;
   	
-  	return React.createElement("table", {className: "table striped"}, React.createElement("thead", null, React.createElement("tr", null, React.createElement("td", null, "字"), React.createElement("td", null, "出處"), 
+  	return React.createElement("table", {className: "table striped results"}, React.createElement("thead", null, React.createElement("tr", null, React.createElement("td", null, "字"), React.createElement("td", null, "出處"), 
   	React.createElement("td", null, "頁碼"), React.createElement("td", null, "檢字表頁碼"))
   	), 
   		React.createElement("tbody", null, this.state.results.map(this.renderResultItem))

@@ -1,7 +1,7 @@
 jsonp_handler({
  "version": "1",
  "build": 68,
- "title": "mebagidx",
+ "title": "引得市",
  "date": "2014-12-05T13:32:43.262Z",
  "minruntime": 4,
  "baseurl": "http://rawgit.com/yapcheahshen/mebagidx/master/",

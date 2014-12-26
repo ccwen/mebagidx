@@ -2,14 +2,12 @@ var bootstrap=Require("bootstrap");
 var Fileinstaller=Require("fileinstaller");
 var kde=Require('ksana-document').kde;  // Ksana Database Engine
 var kse=Require('ksana-document').kse; // Ksana Search Engine (run at client side)
-var Swipe=Require("swipe");
 
 var Main = React.createClass({
   getInitialState: function() {
     return {results:[],db:null };
   },
   dbid:"mebagidx",
-  swipetargets:[],
   onReady:function(usage,quota) { 
     var head=this.tocTag||"head";
     if (!this.state.db) kde.open(this.dbid,function(db){
@@ -50,88 +48,6 @@ var Main = React.createClass({
     return <Fileinstaller quota="512M" autoclose={autoclose} needed={require_kdb} 
                      onReady={this.onReady}/>
   },
-  fidialog:function() {
-      this.setState({dialog:true});
-  }, 
-
-  syncToc:function(voff) {
-    this.setState({goVoff:voff||this.filepage2vpos()});
-    this.slideToc();
-  },
-  slideSearch:function() {
-    $("body").scrollTop(0);
-    if (this.refs.Swipe) this.refs.Swipe.swipe.slide(2);
-  },
-  slideToc:function() {
-    $("body").scrollTop(0);
-    if (this.refs.Swipe) this.refs.Swipe.swipe.slide(0);
-  },
-  slideText:function() {
-    if (this.refs.Swipe) {
-      $("body").scrollTop(0);
-      this.refs.Swipe.swipe.slide(1);
-    }
-  },
-  onSwipeStart:function(target) {
-    if (target && this.swipable(target)) {
-      this.swipetargets.push([target,target.style.background]);
-      target.style.background="yellow";
-    }
-    if (this.swipetimer) clearTimeout(this.swipetimer);
-    var that=this;
-    this.swipetimer=setTimeout(function(){
-      if(!that.swipetargets.length) return;
-      that.swipetargets.map(function(t){
-        t[0].style.background=t[1];
-      });
-      that.swipetargets=[];
-    },3000);
-  },
-  swipable:function(target) {
-    while (target && target.dataset && 
-      typeof target.dataset.n=="undefined" && typeof target.dataset.vpos=="undefined" ) {
-      target=target.parentNode;
-    }
-    if (target && target.dataset) return true;
-  },
-  onSwipeEnd:function(target) {
-    if (this.swipetargets.length) {
-      this.swipetargets[0][0].style.background=this.swipetargets[0][1];
-      this.swipetargets.shift();
-    }
-  },
-  onTransitionEnd:function(index,slide,target) {
-    if (!this.tryResultItem(index,target)) this.tryTocNode(index,target);
-  },
-  renderShowtext:function(text,pagename) {
-    var ShowTextComponent=Require("defaultshowtext");
-    if (this.showTextComponent) {
-      ShowTextComponent=this.showTextComponent;
-    }
-    return <ShowTextComponent pagename={pagename} text={text}
-      dictionaries={this.dictionaries}
-      action={this.action}
-      nextpage={this.nextpage} setpage={this.setPage} prevpage={this.prevpage} syncToc={this.syncToc}/>
-  },
-  renderMobile:function(text,pagename) {
-     return (
-      <div className="main">
-        <Swipe ref="Swipe" continuous={true} 
-               transitionEnd={this.onTransitionEnd} 
-               swipeStart={this.onSwipeStart} swipeEnd={this.onSwipeEnd}>
-        <div className="swipediv">
-          
-        </div>
-        <div className="swipediv">                 
-          
-        </div>
-        <div className="swipediv">
-          
-        </div>
-        </Swipe>
-      </div>
-      );
-  },
   componentDidUpdate:function() {
   	if (this.refs.tofind) this.refs.tofind.getDOMNode().focus();
   },
@@ -169,11 +85,11 @@ var Main = React.createClass({
   	return <div>字:<input onInput={this.tofindChanged} className="tofind" ref="tofind"></input>
   	</div>
   },
-  renderResultItem:function(r) {
+  renderResultItem:function(r,idx) {
   	var sources=this.state.db.get(["extra","sources"]);
   	return (
   		<tr>
-  			<td>{this.state.resultnames[r[1]]}</td> 
+  			<td>{this.state.resultnames[idx]}</td> 
   			<td>{sources[r[0]-1]}</td>
   			<td>{r[2]}</td>
   			<td>{r[3]}</td>
@@ -223,13 +139,6 @@ var Main = React.createClass({
         pagename=this.state.bodytext.pagename;
       }
       return this.renderMainUI();
-      /*
-      if (ksanagap.platform=="chrome" || ksanagap.platform=="node-webkit") {
-        return this.renderPC(text,pagename);
-      } else {
-        return this.renderMobile(text,pagename);
-      }
-      */
   	}
   } 
 });

@@ -238,7 +238,8 @@ var timer=null;
 var enterMainComponent=function() {
 	var main=main||"main";
 	var maindiv=maindiv||"main";
-	ksana.mainComponent=React.render(Require(main)(),document.getElementById(maindiv));
+	var Main=React.createElement(Require(main));
+	ksana.mainComponent=React.render(Main,document.getElementById(maindiv));
 }
 var boot=function(appId,main,maindiv) {
 	ksana.appId=appId;
@@ -2606,6 +2607,7 @@ require.register("ksana-document/index.js", function(exports, require, module){
 	,html5fs:require("./html5fs")
 	,plist:require("./plist")
 	,bsearch:require("./bsearch")
+	,search:require("./search")
 	,persistentmarkup:require("./persistentmarkup_pouchdb")
 	,underlines:require("./underlines")
 }
@@ -3952,7 +3954,7 @@ var tibetan =function(s) {
 	return {tokens:tokens,offsets:offsets};
 };
 var isSpace=function(c) {
-	return (c==" ") || (c==",") || (c==".");
+	return (c==" ") ;//|| (c==",") || (c==".");
 }
 var isCJK =function(c) {return ((c>=0x3000 && c<=0x9FFF) 
 || (c>=0xD800 && c<0xDC00) || (c>=0xFF00) ) ;}
@@ -4032,16 +4034,22 @@ var simple=function(s) {
 			}
 			addtoken();
 		} else {
-			if (c=='&' || c=='<' || c=='?'
+			if (c=='&' || c=='<' || c=='?' || c=="," || c=="."
 			|| c=='|' || c=='~' || c=='`' || c==';' 
-			|| c=='>' || c==':' || c=='{' || c=='}'
-			|| c=='=' || c=='@' || c=='[' || c==']' || c=='(' || c==')' || c=="-"
+			|| c=='>' || c==':' 
+			|| c=='=' || c=='@'  || c=="-" 
+			|| c==']' || c=='}'  || c==")" 
+			//|| c=='{' || c=='}'|| c=='[' || c==']' || c=='(' || c==')'
 			|| code==0xf0b || code==0xf0d // tibetan space
 			|| (code>=0x2000 && code<=0x206f)) {
 				addtoken();
-				if (c=='&' || c=='<') {
+				if (c=='&' || c=='<'){ // || c=='{'|| c=='('|| c=='[') {
 					var endchar='>';
 					if (c=='&') endchar=';'
+					//else if (c=='{') endchar='}';
+					//else if (c=='[') endchar=']';
+					//else if (c=='(') endchar=')';
+
 					while (i<s.length && s.charAt(i)!=endchar) {
 						token+=s.charAt(i);
 						i++;
@@ -4054,7 +4062,7 @@ var simple=function(s) {
 				}
 				token='';
 			} else {
-				if (isSpace(c)) {
+				if (c==" ") {
 					token+=c;
 					lastspace=true;
 				} else {
@@ -4364,7 +4372,8 @@ require.register("ksana-document/configs.js", function(exports, require, module)
 var tokenizers=require('./tokenizers');
 
 var normalize1=function(token) {
-	return token.replace(/[ \.,]/g,'').trim();
+	if (!token) return "";
+	return token.replace(/[ \n\.,，。！．「」：；、]/g,'').trim();
 }
 var isSkip1=function(token) {
 	var t=token.trim();
@@ -4525,7 +4534,7 @@ var isSkip=null;
 var normalize=null;
 var tokenize=null;
 
-var putPosting=function(tk) {
+var putPosting=function(tk,vpos) {
 	var	postingid=session.json.tokens[tk];
 	var out=session.json, posting=null;
 	if (!postingid) {
@@ -4535,11 +4544,19 @@ var putPosting=function(tk) {
 	} else {
 		posting=out.postings[postingid];
 	}
-	posting.push(session.vpos);
+	posting.push(vpos||session.vpos);
 }
+var indexOfSorted=nodeRequire("./plist").indexOfSorted;
+var putBigram=function(bi,vpos) {
+	var i=indexOfSorted(session.config.meta.bigram,bi);
+	if (i>-1 && session.config.meta.bigram[i]==bi) {
+		putPosting(bi,vpos);
+	}
+}
+var lastnormalized="", lastnormalized_vpos=0;
 var putPage=function(inscription) {
 	var tokenized=tokenize(inscription);
-	var tokenOffset=0, tovpos=[];
+	var tokenOffset=0, tovpos=[] ;
 	for (var i=0;i<tokenized.tokens.length;i++) {
 		var t=tokenized.tokens[i];
 		tovpos[tokenOffset]=session.vpos;
@@ -4548,7 +4565,14 @@ var putPage=function(inscription) {
 			 session.vpos--;
 		} else {
 			var normalized=normalize(t);
-			if (normalized) 	putPosting(normalized);
+			if (normalized) {
+				putPosting(normalized);
+				if (lastnormalized_vpos+1==session.vpos &&  lastnormalized && session.config.meta && session.config.meta.bigram) {
+					putBigram(lastnormalized+normalized,lastnormalized_vpos);
+				} 
+				lastnormalized_vpos=session.vpos;
+			}
+			lastnormalized=normalized;
  		}
  		session.vpos++;
 	}
@@ -4597,6 +4621,7 @@ var putPages_new=function(parsed,cb) { //25% faster than create a new document
 	for (var i=0;i<parsed.texts.length;i++) {
 		var t=parsed.texts[i];
 		fileContent.push(t.t);
+
 		var tovpos=putPage(t.t);
 		parsed.tovpos[i]=tovpos;
 		session.json.pageNames.push(t.n);
@@ -4633,7 +4658,8 @@ var putPages=function(doc,parsed,cb) {
 		} else {
 			fileContent.push("");
 		}
-		sesison.json.pageNames.push(pg.name);
+
+		session.json.pageNames.push(pg.name);
 		session.json.pageOffsets.push(session.vpos);
 
 		fileInfo.parentId.push(pg.parentId);
@@ -7398,7 +7424,8 @@ var _search=function(engine,q,opts,cb) {
 		$kse.search(opts,cb);
 	} else {//nw or brower
 		var dosearch=require("./search");
-		return dosearch(engine,q,opts,cb);		
+		var res= dosearch(engine,q,opts,cb);
+		return res;
 	}
 }
 
@@ -8142,9 +8169,9 @@ var parseTerm = function(engine,raw,opts) {
 	term=engine.customfunc.normalize(term);
 	
 	if (term.indexOf("%")>-1) {
-		var termregex="^"+term.replace(/%+/g,".*")+"$";
-		if (firstchar=="%") 	termregex=".*"+termregex.substr(1);
-		if (lastchar=="%") 	termregex=termregex.substr(0,termregex.length-1)+".*";
+		var termregex="^"+term.replace(/%+/g,".+")+"$";
+		if (firstchar=="%") 	termregex=".+"+termregex.substr(1);
+		if (lastchar=="%") 	termregex=termregex.substr(0,termregex.length-1)+".+";
 	}
 
 	if (termregex) {
@@ -8215,8 +8242,26 @@ var parsePhrase=function(q) {
 	})
 	return match;
 }
+var tibetanNumber={
+	"\u0f20":"0","\u0f21":"1","\u0f22":"2",	"\u0f23":"3",	"\u0f24":"4",
+	"\u0f25":"5","\u0f26":"6","\u0f27":"7","\u0f28":"8","\u0f29":"9"
+}
+var parseNumber=function(raw) {
+	var n=parseInt(raw,10);
+	if (isNaN(n)){
+		var converted=[];
+		for (var i=0;i<raw.length;i++) {
+			var nn=tibetanNumber[raw[i]];
+			if (typeof nn !="undefined") converted[i]=nn;
+			else break;
+		}
+		return parseInt(converted,10);
+	} else {
+		return n;
+	}
+}
 var parseWildcard=function(raw) {
-	var n=parseInt(raw,10) || 1;
+	var n=parseNumber(raw) || 1;
 	var qcount=raw.split('?').length-1;
 	var scount=raw.split('*').length-1;
 	var type='';
@@ -8226,16 +8271,20 @@ var parseWildcard=function(raw) {
 }
 
 var newPhrase=function() {
-	return {termid:[],posting:[],raw:''};
+	return {termid:[],posting:[],raw:'',termlength:[]};
 } 
-var parseQuery=function(q) {
-	var match=q.match(/(".+?"|'.+?'|\S+)/g)
-	match=match.map(function(str){
-		var n=str.length, h=str.charAt(0), t=str.charAt(n-1)
-		if (h===t&&(h==='"'|h==="'")) str=str.substr(1,n-2)
-		return str
-	})
-	//console.log(input,'==>',match)
+var parseQuery=function(q,sep) {
+	if (sep && q.indexOf(sep)>-1) {
+		var match=q.split(sep);
+	} else {
+		var match=q.match(/(".+?"|'.+?'|\S+)/g)
+		match=match.map(function(str){
+			var n=str.length, h=str.charAt(0), t=str.charAt(n-1)
+			if (h===t&&(h==='"'|h==="'")) str=str.substr(1,n-2)
+			return str
+		})
+		//console.log(input,'==>',match)		
+	}
 	return match;
 }
 var loadPhrase=function(phrase) {
@@ -8247,7 +8296,11 @@ var loadPhrase=function(phrase) {
 		return Q;
 	}
 	if (phrase.termid.length==1) {
-		cache[phrase.key]=phrase.posting=Q.terms[phrase.termid[0]].posting;
+		if (!Q.terms.length){
+			phrase.posting=[];
+		} else {
+			cache[phrase.key]=phrase.posting=Q.terms[phrase.termid[0]].posting;	
+		}
 		return Q;
 	}
 
@@ -8274,7 +8327,8 @@ var loadPhrase=function(phrase) {
 		    	}
 		    }
 		}
-		dis++;	i++;
+		dis += phrase.termlength[i];
+		i++;
 		if (!r) return Q;
   }
   phrase.posting=r;
@@ -8291,7 +8345,7 @@ var trimSpace=function(engine,query) {
 var getPageWithHit=function(fileid,offsets) {
 	var Q=this,engine=Q.engine;
 	var pagewithhit=plist.groupbyposting2(Q.byFile[fileid ], offsets);
-	pagewithhit.shift(); //the first item is not used (0~Q.byFile[0] )
+	if (pagewithhit.length) pagewithhit.shift(); //the first item is not used (0~Q.byFile[0] )
 	var out=[];
 	pagewithhit.map(function(p,idx){if (p.length) out.push(idx)});
 	return out;
@@ -8305,52 +8359,140 @@ var isSimplePhrase=function(phrase) {
 	var m=phrase.match(/[\?%^]/);
 	return !m;
 }
+
+// 發菩提心   ==> 發菩  提心       2 2   
+// 菩提心     ==> 菩提  提心       1 2
+// 劫劫       ==> 劫    劫         1 1   // invalid
+// 因緣所生道  ==> 因緣  所生   道   2 2 1
+var splitPhrase=function(engine,simplephrase,bigram) {
+	var bigram=bigram||engine.get("meta").bigram||[];
+	var tokens=engine.customfunc.tokenize(simplephrase).tokens;
+	var loadtokens=[],lengths=[],j=0,lastbigrampos=-1;
+	while (j+1<tokens.length) {
+		var token=engine.customfunc.normalize(tokens[j]);
+		var nexttoken=engine.customfunc.normalize(tokens[j+1]);
+		var bi=token+nexttoken;
+		var i=plist.indexOfSorted(bigram,bi);
+		if (bigram[i]==bi) {
+			loadtokens.push(bi);
+			if (j+3<tokens.length) {
+				lastbigrampos=j;
+				j++;
+			} else {
+				if (j+2==tokens.length){ 
+					if (lastbigrampos+1==j ) {
+						lengths[lengths.length-1]--;
+					}
+					lastbigrampos=j;
+					j++;
+				}else {
+					lastbigrampos=j;	
+				}
+			}
+			lengths.push(2);
+		} else {
+			if (!bigram || lastbigrampos==-1 || lastbigrampos+1!=j) {
+				loadtokens.push(token);
+				lengths.push(1);				
+			}
+		}
+		j++;
+	}
+
+	while (j<tokens.length) {
+		var token=engine.customfunc.normalize(tokens[j]);
+		loadtokens.push(token);
+		lengths.push(1);
+		j++;
+	}
+
+	return {tokens:loadtokens, lengths: lengths , tokenlength: tokens.length};
+}
 /* host has fast native function */
 var fastPhrase=function(engine,phrase) {
 	var phrase_term=newPhrase();
-	var tokens=engine.customfunc.tokenize(phrase).tokens;
-	var paths=postingPathFromTokens(engine,tokens);
-	phrase_term.width=tokens.length; //for excerpt.js to getPhraseWidth
+	//var tokens=engine.customfunc.tokenize(phrase).tokens;
+	var splitted=splitPhrase(engine,phrase);
+
+	var paths=postingPathFromTokens(engine,splitted.tokens);
+//create wildcard
+
+	phrase_term.width=splitted.tokenlength; //for excerpt.js to getPhraseWidth
+
 	engine.get(paths,{address:true},function(postingAddress){ //this is sync
 		phrase_term.key=phrase;
-		engine.postingCache[phrase]=engine.mergePostings(postingAddress);
+		var postingAddressWithWildcard=[];
+		for (var i=0;i<postingAddress.length;i++) {
+			postingAddressWithWildcard.push(postingAddress[i]);
+			if (splitted.lengths[i]>1) {
+				postingAddressWithWildcard.push([splitted.lengths[i],0]); //wildcard has blocksize==0 
+			}
+		}
+		engine.postingCache[phrase]=engine.mergePostings(postingAddressWithWildcard);
 	});
 	return phrase_term;
 	// put posting into cache[phrase.key]
 }
 var slowPhrase=function(engine,terms,phrase) {
-	  var j=0,tokens=engine.customfunc.tokenize(phrase).tokens;
-	  var phrase_term=newPhrase();
-
-		while (j<tokens.length) {
-			var raw=tokens[j];
-			if (isWildcard(raw)) {
-				if (phrase_term.termid.length==0)  { //skip leading wild card
-					j++
-					continue;
-				}
-				terms.push(parseWildcard(raw));
-			} else if (isOrTerm(raw)){
-				var term=orTerms.apply(this,[tokens,j]);
-				terms.push(term);
-				j+=term.key.split(',').length-1;
-			} else {
-				var term=parseTerm(engine,raw);
-				var termidx=terms.map(function(a){return a.key}).indexOf(term.key);
-				if (termidx==-1) terms.push(term);
+	var j=0,tokens=engine.customfunc.tokenize(phrase).tokens;
+	var phrase_term=newPhrase();
+	var termid=0;
+	while (j<tokens.length) {
+		var raw=tokens[j], termlength=1;
+		if (isWildcard(raw)) {
+			if (phrase_term.termid.length==0)  { //skip leading wild card
+				j++
+				continue;
 			}
-			phrase_term.termid.push(terms.length-1);
+			terms.push(parseWildcard(raw));
+			termid=terms.length-1;
+			phrase_term.termid.push(termid);
+			phrase_term.termlength.push(termlength);
+		} else if (isOrTerm(raw)){
+			var term=orTerms.apply(this,[tokens,j]);
+			if (term) {
+				terms.push(term);
+				termid=terms.length-1;
+				j+=term.key.split(',').length-1;					
+			}
 			j++;
+			phrase_term.termid.push(termid);
+			phrase_term.termlength.push(termlength);
+		} else {
+			var phrase="";
+			while (j<tokens.length) {
+				if (!(isWildcard(tokens[j]) || isOrTerm(tokens[j]))) {
+					phrase+=tokens[j];
+					j++;
+				} else break;
+			}
+
+			var splitted=splitPhrase(engine,phrase);
+			for (var i=0;i<splitted.tokens.length;i++) {
+
+				var term=parseTerm(engine,splitted.tokens[i]);
+				var termidx=terms.map(function(a){return a.key}).indexOf(term.key);
+				if (termidx==-1) {
+					terms.push(term);
+					termid=terms.length-1;
+				} else {
+					termid=termidx;
+				}				
+				phrase_term.termid.push(termid);
+				phrase_term.termlength.push(splitted.lengths[i]);
+			}
 		}
-		phrase_term.key=phrase;
-		//remove ending wildcard
-		var P=phrase_term , T=null;
-		do {
-			T=terms[P.termid[P.termid.length-1]];
-			if (!T) break;
-			if (T.wildcard) P.termid.pop(); else break;
-		} while(T);		
-		return phrase_term;
+		j++;
+	}
+	phrase_term.key=phrase;
+	//remove ending wildcard
+	var P=phrase_term , T=null;
+	do {
+		T=terms[P.termid[P.termid.length-1]];
+		if (!T) break;
+		if (T.wildcard) P.termid.pop(); else break;
+	} while(T);		
+	return phrase_term;
 }
 var newQuery =function(engine,query,opts) {
 	//if (!query) return;
@@ -8359,7 +8501,7 @@ var newQuery =function(engine,query,opts) {
 
 	var phrases=query,phrases=[];
 	if (typeof query=='string' && query) {
-		phrases=parseQuery(query);
+		phrases=parseQuery(query,opts.phrase_sep || "");
 	}
 	
 	var phrase_terms=[], terms=[],variants=[],operators=[];
@@ -8408,10 +8550,10 @@ var postingPathFromTokens=function(engine,tokens) {
 	return postingid.map(function(t){return ["postings",t]});
 }
 var loadPostings=function(engine,tokens,cb) {
-	tokens=tokens.filter(function(t){
+	var toloadtokens=tokens.filter(function(t){
 		return !engine.postingCache[t.key]; //already in cache
 	});
-	if (tokens.length==0) {
+	if (toloadtokens.length==0) {
 		cb();
 		return;
 	}
@@ -8464,7 +8606,9 @@ var phrase_intersect=function(engine,Q) {
 	var empty=[],emptycount=0,hashit=0;
 	for (var i=0;i<Q.phrases.length;i++) {
 		var byfile=plist.groupbyposting2(Q.phrases[i].posting,fileOffsets);
-		byfile.shift();byfile.pop();
+		if (byfile.length) byfile.shift();
+		if (byfile.length) byfile.pop();
+		byfile.pop();
 		if (intersected==null) {
 			intersected=byfile;
 		} else {
@@ -8496,11 +8640,15 @@ var countFolderFile=function(Q) {
 	Q.byFolder.map(function(f){if (f) Q.folderWithHitCount++});
 }
 var main=function(engine,q,opts,cb){
+	var starttime=new Date();
+
 	if (typeof opts=="function") cb=opts;
 	opts=opts||{};
 	var Q=engine.queryCache[q];
 	if (!Q) Q=newQuery(engine,q,opts);
 	if (!Q) {
+		engine.searchtime=new Date()-starttime;
+		engine.totaltime=engine.searchtime
 		if (engine.context) cb.apply(engine.context,[{rawresult:[]}]);
 		else cb({rawresult:[]});
 		return;
@@ -8509,6 +8657,9 @@ var main=function(engine,q,opts,cb){
 	if (Q.phrases.length) {
 		loadPostings(engine,Q.terms,function(){
 			if (!Q.phrases[0].posting) {
+				engine.searchtime=new Date()-starttime;
+				engine.totaltime=engine.searchtime
+
 				cb.apply(engine.context,[{rawresult:[]}]);
 				return;			
 			}
@@ -8533,20 +8684,27 @@ var main=function(engine,q,opts,cb){
 			}
 
 			if (opts.range) {
+				engine.searchtime=new Date()-starttime;
 				excerpt.resultlist(engine,Q,opts,function(data) { 
 					//console.log("excerpt ok");
 					Q.excerpt=data;
+					engine.totaltime=new Date()-starttime;
 					cb.apply(engine.context,[Q]);
 				});
 			} else {
+				engine.searchtime=new Date()-starttime;
+				engine.totaltime=new Date()-starttime;
 				cb.apply(engine.context,[Q]);
-			}		
+			}
 		});
 	} else { //empty search
+		engine.searchtime=new Date()-starttime;
+		engine.totaltime=new Date()-starttime;
 		cb.apply(engine.context,[Q]);
 	};
 }
 
+main.splitPhrase=splitPhrase; //just for debug
 module.exports=main;
 });
 require.register("ksana-document/plist.js", function(exports, require, module){
@@ -8632,6 +8790,7 @@ var groupbyposting=function(arr,gposting) { //relative vpos
   return out;
 }
 var groupbyposting2=function(arr,gposting) { //absolute vpos
+  if (!arr || !arr.length) return [];
   if (!gposting.length) return [arr.length];
   var out=[];
   for (var i=0;i<=gposting.length;i++) out[i]=[];
@@ -8999,7 +9158,7 @@ var getPhraseWidth=function (Q,phraseid,vpos) {
 			width+=T.width;
 			if (T.wildcard=='*') varwidth=true;
 		} else {
-			width++;
+			width+=P.termlength[i];
 		}
 	}
 	if (varwidth) { //width might be smaller due to * wildcard
@@ -9019,7 +9178,7 @@ var hitInRange=function(Q,startvpos,endvpos) {
 		if (!P.posting) continue;
 		var s=plist.indexOfSorted(P.posting,startvpos);
 		var e=plist.indexOfSorted(P.posting,endvpos);
-		var r=P.posting.slice(s,e);
+		var r=P.posting.slice(s,e+1);
 		var width=getPhraseWidths(Q,i,r);
 
 		res=res.concat(r.map(function(vpos,idx){ return [vpos,width[idx],i] }));
@@ -9076,11 +9235,19 @@ output:
 var getFileWithHits=function(engine,Q,range) {
 	var fileOffsets=engine.get("fileOffsets");
 	var out=[],filecount=100;
+	var start=0 , end=Q.byFile.length;
+	Q.excerptOverflow=false;
 	if (range.start) {
-		var first=range.start , start=0 , end;
+		var first=range.start ;
+		var last=range.end;
+		if (!last) last=Number.MAX_SAFE_INTEGER;
 		for (var i=0;i<fileOffsets.length;i++) {
-			if (fileOffsets[i]>first) break;
-			start=i;
+			//if (fileOffsets[i]>first) break;
+			if (fileOffsets[i]>last) {
+				end=i;
+				break;
+			}
+			if (fileOffsets[i]<first) start=i;
 		}		
 	} else {
 		start=range.filestart || 0;
@@ -9094,16 +9261,22 @@ var getFileWithHits=function(engine,Q,range) {
 	var fileWithHits=[],totalhit=0;
 	range.maxhit=range.maxhit||1000;
 
-	for (var i=start;i<Q.byFile.length;i++) {
+	for (var i=start;i<end;i++) {
 		if(Q.byFile[i].length>0) {
 			totalhit+=Q.byFile[i].length;
 			fileWithHits.push(i);
 			range.nextFileStart=i;
-			if (fileWithHits.length>=filecount) break;
-			if (totalhit>range.maxhit) break;
+			if (fileWithHits.length>=filecount) {
+				Q.excerptOverflow=true;
+				break;
+			}
+			if (totalhit>range.maxhit) {
+				Q.excerptOverflow=true;
+				break;
+			}
 		}
 	}
-	if (i>=Q.byFile.length) { //no more file
+	if (i>=end) { //no more file
 		Q.excerptStop=true;
 	}
 	return fileWithHits;
@@ -9121,6 +9294,9 @@ var resultlist=function(engine,Q,opts,cb) {
 			opts.range.maxpage=opts.range.maxhit;
 		}
 		if (!opts.range.maxpage) opts.range.maxpage=100;
+		if (!opts.range.end) {
+			opts.range.end=Number.MAX_SAFE_INTEGER;
+		}
 	}
 	var fileWithHits=getFileWithHits(engine,Q,opts.range);
 	if (!fileWithHits.length) {
@@ -9141,6 +9317,7 @@ var resultlist=function(engine,Q,opts,cb) {
 		for (var j=0; j<pagewithhit.length;j++) {
 			if (!pagewithhit[j].length) continue;
 			//var offsets=pagewithhit[j].map(function(p){return p- fileOffsets[i]});
+			if (pageOffsets[j]>opts.range.end) break;
 			output.push(  {file: nfile, page:j,  pagename:pageNames[j]});
 			if (output.length>opts.range.maxpage) break;
 		}
@@ -9157,15 +9334,18 @@ var resultlist=function(engine,Q,opts,cb) {
 			var endvpos=files[output[i].file].pageOffsets[output[i].page];
 			var hl={};
 
-			if (opts.range && opts.range.start && startvpos<opts.range.start ) {
-				startvpos=opts.range.start;
+			if (opts.range && opts.range.start  ) {
+				if ( startvpos<opts.range.start) startvpos=opts.range.start;
+			//	if (endvpos>opts.range.end) endvpos=opts.range.end;
 			}
 			
 			if (opts.nohighlight) {
 				hl.text=pages[i];
 				hl.hits=hitInRange(Q,startvpos,endvpos);
 			} else {
-				var o={text:pages[i],startvpos:startvpos, endvpos: endvpos, Q:Q,fulltext:opts.fulltext};
+				var o={nocrlf:true,nospan:true,
+					text:pages[i],startvpos:startvpos, endvpos: endvpos, 
+					Q:Q,fulltext:opts.fulltext};
 				hl=highlight(Q,o);
 			}
 			if (hl.text) {
@@ -9205,10 +9385,12 @@ var injectTag=function(Q,opts){
 			output+=opts.abridge||"...";
 		}
 		previnrange=inrange;
+		var token=tokens[i];
+		if (opts.nocrlf && token=="\n") token="";
 
 		if (inrange && i<tokens.length) {
 			if (skip) {
-				output+=tokens[i];
+				output+=token;
 			} else {
 				var classes="";	
 
@@ -9231,11 +9413,15 @@ var injectTag=function(Q,opts){
 
 				if (vpos>=hitstart && vpos<hitend) classes=hitclass+" "+hitclass+nphrase;
 				if (vpos>=tagstart && vpos<tagend) classes+=" "+tagclass;
-			
-				output+='<span vpos="'+vpos+'"';
-				if (classes) classes=' class="'+classes+'"';
-				output+=classes+'>';
-				output+=tokens[i]+'</span>';
+
+				if (classes || !opts.nospan) {
+					output+='<span vpos="'+vpos+'"';
+					if (classes) classes=' class="'+classes+'"';
+					output+=classes+'>';
+					output+=token+'</span>';
+				} else {
+					output+=token;
+				}
 			}
 		}
 		if (!skip) vpos++;
@@ -9251,7 +9437,7 @@ var highlight=function(Q,opts) {
 	if (!opts.text) return {text:"",hits:[]};
 	var opt={text:opts.text,
 		hits:null,abridge:opts.abridge,vpos:opts.startvpos,
-		fulltext:opts.fulltext,renderTags:opts.renderTags
+		fulltext:opts.fulltext,renderTags:opts.renderTags,nospan:opts.nospan,nocrlf:opts.nocrlf,
 	};
 
 	opt.hits=hitInRange(opts.Q,opts.startvpos,opts.endvpos);
@@ -9324,11 +9510,13 @@ var highlightFile=function(Q,fileid,opts,cb) {
 				var endvpos=pageOffsets[i+1];
 				var pagenames=Q.engine.getFilePageNames(fileid);
 				var page=getPageSync(Q.engine, fileid,i+1);
-					var opt={text:page.text,hits:null,tag:'hl',vpos:startvpos,fulltext:true};
+					var opt={text:page.text,hits:null,tag:'hl',vpos:startvpos,
+					fulltext:true,nospan:opts.nospan,nocrlf:opts.nocrlf};
 				var pagename=pagenames[i+1];
 				opt.hits=hitInRange(Q,startvpos,endvpos);
 				var pb='<pb n="'+pagename+'"></pb>';
-				output.push(pb+injectTag(Q,opt));
+				var withtag=injectTag(Q,opt);
+				output.push(pb+withtag);
 			}			
 		}
 
@@ -9347,7 +9535,8 @@ var highlightPage=function(Q,fileid,pageid,opts,cb) {
 	var pagenames=Q.engine.getFilePageNames(fileid);
 
 	this.getPage(Q.engine,fileid,pageid,function(res){
-		var opt={text:res.text,hits:null,vpos:startvpos,fulltext:true};
+		var opt={text:res.text,hits:null,vpos:startvpos,fulltext:true,
+			nospan:opts.nospan,nocrlf:opts.nocrlf};
 		opt.hits=hitInRange(Q,startvpos,endvpos);
 		if (opts.renderTags) {
 			opt.tags=tagsInRange(Q,opts.renderTags,startvpos,endvpos);
@@ -13636,16 +13825,19 @@ var startindexer=function(mkdbconfig) {
   }
   var getstatus=function() {
     var status=indexer.status();
-    console.log((Math.floor(status.progress*1000)/10)+'%');
+
     if (status.done) {
       var endtime=new Date();
       console.log("END",endtime, "elapse",(endtime-starttime) /1000,"seconds") ;
       //status.outputfn=movefile(status.outputfn,"..");
       clearInterval(timer);
+    } else {
+      if (mkdbconfig.callbacks && mkdbconfig.callbacks.onStatus) {
+        mkdbconfig.callbacks.onStatus(status);  
+      }
     }
   }  
-  timer=setInterval( getstatus, 1000);
-
+  var timer=setInterval( getstatus, 1000);
 }
 
 var build=function(path,mkdbjs){
@@ -13661,7 +13853,6 @@ var build=function(path,mkdbjs){
   
   var glob = require("glob");
   
-  var timer=null;
   var fn=require("path").resolve(path,mkdbjs);  
   var mkdbconfig=require(fn);
   
@@ -14421,7 +14612,7 @@ var HtmlFS=Require("htmlfs");
 var CheckBrowser=Require("checkbrowser");  
   
 var html5fs=Require("ksana-document").html5fs;
-var FileList = React.createClass({displayName: 'FileList',
+var FileList = React.createClass({displayName: "FileList",
 	getInitialState:function() {
 		return {downloading:false,progress:0};
 	},
@@ -14429,7 +14620,7 @@ var FileList = React.createClass({displayName: 'FileList',
         	var classes="btn btn-warning";
         	if (this.state.downloading) classes+=" disabled";
 		if (f.hasUpdate) return React.createElement("button", {className: classes, 
-			'data-filename': f.filename, 'data-url': f.url, 
+			"data-filename": f.filename, "data-url": f.url, 
 	            onClick: this.download
 	       }, "Update")
 		else return null;
@@ -14441,7 +14632,7 @@ var FileList = React.createClass({displayName: 'FileList',
 	      React.createElement("td", null), 
 	      React.createElement("td", {className: "pull-right"}, 
 	      this.updatable(f), React.createElement("button", {className: classes, 
-	               onClick: this.deleteFile, 'data-filename': f.filename}, "Delete")
+	               onClick: this.deleteFile, "data-filename": f.filename}, "Delete")
 	        
 	      )
 	  )
@@ -14449,11 +14640,11 @@ var FileList = React.createClass({displayName: 'FileList',
 	showRemote:function(f) { 
 	  var classes="btn btn-warning";
 	  if (this.state.downloading) classes+=" disabled";
-	  return (React.createElement("tr", {'data-id': f.filename}, React.createElement("td", null, 
+	  return (React.createElement("tr", {"data-id": f.filename}, React.createElement("td", null, 
 	      f.filename), 
 	      React.createElement("td", null, f.desc), 
 	      React.createElement("td", null, 
-	      React.createElement("span", {'data-filename': f.filename, 'data-url': f.url, 
+	      React.createElement("span", {"data-filename": f.filename, "data-url": f.url, 
 	            className: classes, 
 	            onClick: this.download}, "Download")
 	      )
@@ -14506,8 +14697,8 @@ var FileList = React.createClass({displayName: 'FileList',
 	      	"Downloading from ", this.state.url, 
 	      React.createElement("div", {key: "progress", className: "progress col-md-8"}, 
 	          React.createElement("div", {className: "progress-bar", role: "progressbar", 
-	              'aria-valuenow': progress, 'aria-valuemin': "0", 
-	              'aria-valuemax': "100", style: {width: progress+"%"}}, 
+	              "aria-valuenow": progress, "aria-valuemin": "0", 
+	              "aria-valuemax": "100", style: {width: progress+"%"}}, 
 	            progress, "%"
 	          )
 	        ), 
@@ -14532,7 +14723,7 @@ var FileList = React.createClass({displayName: 'FileList',
 	},
 	render:function() {
 	  	return (
-		React.createElement("div", {ref: "dialog1", className: "modal fade", 'data-backdrop': "static"}, 
+		React.createElement("div", {ref: "dialog1", className: "modal fade", "data-backdrop": "static"}, 
 		    React.createElement("div", {className: "modal-dialog"}, 
 		      React.createElement("div", {className: "modal-content"}, 
 		        React.createElement("div", {className: "modal-header"}, 
@@ -14559,7 +14750,7 @@ var FileList = React.createClass({displayName: 'FileList',
 	}
 });
 /*TODO kdb check version*/
-var Filemanager = React.createClass({displayName: 'Filemanager',
+var Filemanager = React.createClass({displayName: "Filemanager",
 	getInitialState:function() {
 		var quota=this.getQuota();
 		return {browserReady:false,noupdate:true,	requestQuota:quota,remain:0};
@@ -14728,7 +14919,7 @@ var checkfs=function() {
 var featurechecks={
 	"fs":checkfs
 }
-var checkbrowser = React.createClass({displayName: 'checkbrowser',
+var checkbrowser = React.createClass({displayName: "checkbrowser",
 	getInitialState:function() {
 
 		var missingFeatures=this.getMissingFeatures();
@@ -14752,11 +14943,11 @@ var checkbrowser = React.createClass({displayName: 'checkbrowser',
 			return React.createElement("div", null, m);
 		}
 		return (
-		 React.createElement("div", {ref: "dialog1", className: "modal fade", 'data-backdrop': "static"}, 
+		 React.createElement("div", {ref: "dialog1", className: "modal fade", "data-backdrop": "static"}, 
 		    React.createElement("div", {className: "modal-dialog"}, 
 		      React.createElement("div", {className: "modal-content"}, 
 		        React.createElement("div", {className: "modal-header"}, 
-		          React.createElement("button", {type: "button", className: "close", 'data-dismiss': "modal", 'aria-hidden': "true"}, "×"), 
+		          React.createElement("button", {type: "button", className: "close", "data-dismiss": "modal", "aria-hidden": "true"}, "×"), 
 		          React.createElement("h4", {className: "modal-title"}, "Browser Check")
 		        ), 
 		        React.createElement("div", {className: "modal-body"}, 
@@ -15297,7 +15488,7 @@ module.exports = function Swipe(container, options) {
 require.register("ksanaforge-htmlfs/index.js", function(exports, require, module){
 /** @jsx React.DOM */
 var html5fs=Require("ksana-document").html5fs;
-var htmlfs = React.createClass({displayName: 'htmlfs',
+var htmlfs = React.createClass({displayName: "htmlfs",
 	getInitialState:function() { 
 		return {ready:false, quota:0,usage:0,Initialized:false,autoclose:this.props.autoclose};
 	},
@@ -15312,7 +15503,7 @@ var htmlfs = React.createClass({displayName: 'htmlfs',
 	},
 	welcome:function() {
 		return (
-		React.createElement("div", {ref: "dialog1", className: "modal fade", id: "myModal", 'data-backdrop': "static"}, 
+		React.createElement("div", {ref: "dialog1", className: "modal fade", id: "myModal", "data-backdrop": "static"}, 
 		    React.createElement("div", {className: "modal-dialog"}, 
 		      React.createElement("div", {className: "modal-content"}, 
 		        React.createElement("div", {className: "modal-header"}, 
@@ -15337,7 +15528,7 @@ var htmlfs = React.createClass({displayName: 'htmlfs',
 			else null;
 		}
 		return (
-		React.createElement("div", {ref: "dialog1", className: "modal fade", id: "myModal", 'data-backdrop': "static"}, 
+		React.createElement("div", {ref: "dialog1", className: "modal fade", id: "myModal", "data-backdrop": "static"}, 
 		    React.createElement("div", {className: "modal-dialog"}, 
 		      React.createElement("div", {className: "modal-content"}, 
 		        React.createElement("div", {className: "modal-header"}, 
@@ -15352,7 +15543,7 @@ var htmlfs = React.createClass({displayName: 'htmlfs',
 		          React.createElement("span", null, this.state.quota, " total , ", this.state.usage, " in used")
 		        ), 
 		        React.createElement("div", {className: "modal-footer"}, 
-		          React.createElement("button", {onClick: this.dismiss, type: "button", className: "btn btn-default", 'data-dismiss': "modal"}, "Close"), 
+		          React.createElement("button", {onClick: this.dismiss, type: "button", className: "btn btn-default", "data-dismiss": "modal"}, "Close"), 
 		          more()
 		        )
 		      )
@@ -15412,14 +15603,12 @@ var bootstrap=Require("bootstrap");
 var Fileinstaller=Require("fileinstaller");
 var kde=Require('ksana-document').kde;  // Ksana Database Engine
 var kse=Require('ksana-document').kse; // Ksana Search Engine (run at client side)
-var Swipe=Require("swipe");
 
-var Main = React.createClass({displayName: 'Main',
+var Main = React.createClass({displayName: "Main",
   getInitialState: function() {
     return {results:[],db:null };
   },
   dbid:"mebagidx",
-  swipetargets:[],
   onReady:function(usage,quota) { 
     var head=this.tocTag||"head";
     if (!this.state.db) kde.open(this.dbid,function(db){
@@ -15460,88 +15649,6 @@ var Main = React.createClass({displayName: 'Main',
     return React.createElement(Fileinstaller, {quota: "512M", autoclose: autoclose, needed: require_kdb, 
                      onReady: this.onReady})
   },
-  fidialog:function() {
-      this.setState({dialog:true});
-  }, 
-
-  syncToc:function(voff) {
-    this.setState({goVoff:voff||this.filepage2vpos()});
-    this.slideToc();
-  },
-  slideSearch:function() {
-    $("body").scrollTop(0);
-    if (this.refs.Swipe) this.refs.Swipe.swipe.slide(2);
-  },
-  slideToc:function() {
-    $("body").scrollTop(0);
-    if (this.refs.Swipe) this.refs.Swipe.swipe.slide(0);
-  },
-  slideText:function() {
-    if (this.refs.Swipe) {
-      $("body").scrollTop(0);
-      this.refs.Swipe.swipe.slide(1);
-    }
-  },
-  onSwipeStart:function(target) {
-    if (target && this.swipable(target)) {
-      this.swipetargets.push([target,target.style.background]);
-      target.style.background="yellow";
-    }
-    if (this.swipetimer) clearTimeout(this.swipetimer);
-    var that=this;
-    this.swipetimer=setTimeout(function(){
-      if(!that.swipetargets.length) return;
-      that.swipetargets.map(function(t){
-        t[0].style.background=t[1];
-      });
-      that.swipetargets=[];
-    },3000);
-  },
-  swipable:function(target) {
-    while (target && target.dataset && 
-      typeof target.dataset.n=="undefined" && typeof target.dataset.vpos=="undefined" ) {
-      target=target.parentNode;
-    }
-    if (target && target.dataset) return true;
-  },
-  onSwipeEnd:function(target) {
-    if (this.swipetargets.length) {
-      this.swipetargets[0][0].style.background=this.swipetargets[0][1];
-      this.swipetargets.shift();
-    }
-  },
-  onTransitionEnd:function(index,slide,target) {
-    if (!this.tryResultItem(index,target)) this.tryTocNode(index,target);
-  },
-  renderShowtext:function(text,pagename) {
-    var ShowTextComponent=Require("defaultshowtext");
-    if (this.showTextComponent) {
-      ShowTextComponent=this.showTextComponent;
-    }
-    return React.createElement(ShowTextComponent, {pagename: pagename, text: text, 
-      dictionaries: this.dictionaries, 
-      action: this.action, 
-      nextpage: this.nextpage, setpage: this.setPage, prevpage: this.prevpage, syncToc: this.syncToc})
-  },
-  renderMobile:function(text,pagename) {
-     return (
-      React.createElement("div", {className: "main"}, 
-        React.createElement(Swipe, {ref: "Swipe", continuous: true, 
-               transitionEnd: this.onTransitionEnd, 
-               swipeStart: this.onSwipeStart, swipeEnd: this.onSwipeEnd}, 
-        React.createElement("div", {className: "swipediv"}
-          
-        ), 
-        React.createElement("div", {className: "swipediv"}
-          
-        ), 
-        React.createElement("div", {className: "swipediv"}
-          
-        )
-        )
-      )
-      );
-  },
   componentDidUpdate:function() {
   	if (this.refs.tofind) this.refs.tofind.getDOMNode().focus();
   },
@@ -15579,11 +15686,11 @@ var Main = React.createClass({displayName: 'Main',
   	return React.createElement("div", null, "字:", React.createElement("input", {onInput: this.tofindChanged, className: "tofind", ref: "tofind"})
   	)
   },
-  renderResultItem:function(r) {
+  renderResultItem:function(r,idx) {
   	var sources=this.state.db.get(["extra","sources"]);
   	return (
   		React.createElement("tr", null, 
-  			React.createElement("td", null, this.state.resultnames[r[1]]), 
+  			React.createElement("td", null, this.state.resultnames[idx]), 
   			React.createElement("td", null, sources[r[0]-1]), 
   			React.createElement("td", null, r[2]), 
   			React.createElement("td", null, r[3])
@@ -15633,13 +15740,6 @@ var Main = React.createClass({displayName: 'Main',
         pagename=this.state.bodytext.pagename;
       }
       return this.renderMainUI();
-      /*
-      if (ksanagap.platform=="chrome" || ksanagap.platform=="node-webkit") {
-        return this.renderPC(text,pagename);
-      } else {
-        return this.renderMobile(text,pagename);
-      }
-      */
   	}
   } 
 });
